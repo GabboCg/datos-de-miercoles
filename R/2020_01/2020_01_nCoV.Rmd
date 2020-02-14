@@ -1,0 +1,134 @@
+---
+title: "Casos Nuevo Coronavirus"
+subtitle: "Datos de Miércoles"
+author: "Gabriel E. Cabrera"
+date: "*Week* 1"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+if(!require("pacman")) install.packages("pacman")
+p_load("tidyverse", "janitor", "rgdal", "sf", "ggtext", "showtext", "ggthemes")
+```
+
+```{r}
+# ggplot theme updates
+font_add_google("Oswald", "Oswald")
+```
+
+```{r}
+# descarga el repositorio
+download.file(url = "https://github.com/CSSEGISandData/COVID-19/archive/master.zip", 
+              destfile = "COVID-19-master.zip")
+
+# descomprime
+unzip("COVID-19-master.zip")
+
+# elimina .zip
+unlink("COVID-19-master.zip", recursive = TRUE)
+```
+
+```{r}
+direc_data <- "COVID-19-master/time_series/time_series_2019-ncov-Confirmed.csv"
+
+ncov_confirmed <- read_csv(direc_data)
+
+province_name <-  ncov_confirmed %>%
+    clean_names() %>%
+    select(province_state, country_region, lat, long) %>% 
+    filter(country_region == "Mainland China",
+           province_state != "Hubei")
+
+updated <- ncov_confirmed[, ncol(ncov_confirmed)] %>% 
+    clean_names() %>% 
+    setNames("updated")
+
+china_ncov_confirmed <- ncov_confirmed %>%
+    clean_names() %>%
+    select(province_state, country_region) %>% 
+    cbind(updated) %>% 
+    as_tibble() %>% 
+    filter(country_region == "Mainland China",
+           province_state != "Hubei")  %>% 
+    mutate(total = sum(updated)) %>% 
+    select(province_state, country_region, total, updated) 
+```
+
+```{r}
+# https://gadm.org/download_country_v3.html
+shp_file <- paste0(getwd(), "/gadm36_CHN_shp/gadm36_CHN_1.shp")
+
+map <- readOGR(shp_file)
+
+map <- spTransform(map, CRS = CRS("+init=epsg:4326"))
+
+map_data <- data.frame(id = rownames(map@data), map@data)
+
+map_df <- fortify(map) %>%
+    merge(map_data, by="id") %>%
+    select(long, lat, group, NAME_1) %>%
+    rename(province_state = NAME_1) %>%
+    left_join(china_ncov_confirmed, by = "province_state") %>% 
+    mutate(contagion = case_when(
+               is.na(updated) ~ "[0-250)", 
+               updated < 250 ~ "[0-250)",
+               updated >= 250 & updated < 500 ~ "[250-500)",
+               updated >= 500 & updated < 750 ~ "[500-750)",
+               updated >= 750 & updated < 1000 ~ "[750-1000)",
+               updated >= 1000 ~ "(\u2265 1000)"
+           ),
+           contagion = factor(contagion, 
+                       levels = c("[0-250)", 
+                                  "[250-500)", 
+                                  "[500-750)", 
+                                  "[750-1000)", 
+                                  "(\u2265 1000)")))
+```
+
+```{r, fig.width = 14, fig.height = 8.5}
+legend_title <- "Cantidad de infectados por el Novel Coronavirus (COVID-19) en China"
+
+mapa_ncov <- ggplot(data = map_df, 
+                    aes(x = long, y = lat, group = group, fill = contagion)) +
+    geom_polygon()  +
+    geom_path(color = "grey70", size = 0.1) +
+    coord_map("bonne", lat0 = 50) + 
+    scale_x_continuous(expand = c(0.02, 0.02), limits = c(70, 135)) +
+    scale_y_continuous(expand = c(0.02, 0.02), limits = c(17, 57)) +
+    scale_fill_manual(values = c("#f5f5f5", "#efe3dc", "#e7bb9d", "#d2726a", "#ba0101"),
+                      name = legend_title) +
+    scale_color_manual(values = c("#dcdcdc", "#dfc7b9", "#dd9f74", "#c64d43", "#870101"),
+                       name = legend_title) +
+    guides(fill = guide_legend(title.position = "top", 
+                               title.hjust = 0.5, 
+                               nrow = 1,
+                               label.position = "bottom")) +
+    labs(caption = "@GaboCg | Fuente: CSSE at John Hopkins University") + 
+    theme_void() +
+    theme(plot.caption = element_text(family = "Oswald",
+                                      size = 10,
+                                      color = "grey70",
+                                      face = "bold",
+                                      hjust = 0.5,
+                                      margin = margin(t = -10 , b = 10)),
+        legend.position = c(0.5, 0.925),
+        legend.key.height = unit(0.5, "lines"),
+        legend.key.width = unit(8.0, "lines"),
+        legend.text = element_text(family = "Oswald",
+                                   color = "grey40",
+                                   size = 10),
+        legend.title = element_text(family = "Oswald",
+                                    face = "bold",
+                                    color = "grey20",
+                                    size = 12),
+        plot.margin = margin(0, 0, 0, 0))
+
+ggsave(here::here("plots", "2020_01", "2020_01_china_ncov.pdf"),
+       plot = mapa_ncov, width = 14, height = 8.5, device = cairo_pdf)
+```
+
+
