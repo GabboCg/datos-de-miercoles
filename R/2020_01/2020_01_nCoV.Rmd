@@ -7,12 +7,13 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = "hide")
 ```
 
 ```{r}
 if(!require("pacman")) install.packages("pacman")
-p_load("tidyverse", "janitor", "rgdal", "sf", "ggtext", "showtext", "ggthemes")
+p_load("tidyverse", "janitor", "rgdal", "sf", "ggtext", "showtext", 
+       "ggthemes", "lubridate")
 ```
 
 ```{r}
@@ -33,19 +34,24 @@ unlink("COVID-19-master.zip", recursive = TRUE)
 ```
 
 ```{r}
-direc_data <- "COVID-19-master/time_series/time_series_2019-ncov-Confirmed.csv"
+# direccion de los datos 
+confirmed_data <- "COVID-19-master/time_series/time_series_2019-ncov-Confirmed.csv"
 
-ncov_confirmed <- read_csv(direc_data)
+# lee csv con los casos confirmados
+ncov_confirmed <- read_csv(confirmed_data)
 
+# nombre de las provincias
 province_name <-  ncov_confirmed %>%
     clean_names() %>%
     select(province_state, country_region, lat, long) %>% 
     filter(country_region == "Mainland China")
 
+# ultima columna
 updated <- ncov_confirmed[, ncol(ncov_confirmed)] %>% 
     clean_names() %>% 
     setNames("updated")
 
+# casos confirmados en China por provincia/estado
 china_ncov_confirmed <- ncov_confirmed %>%
     clean_names() %>%
     select(province_state, country_region) %>% 
@@ -53,33 +59,62 @@ china_ncov_confirmed <- ncov_confirmed %>%
     as_tibble() %>% 
     filter(country_region == "Mainland China")  %>% 
     mutate(total = sum(updated)) %>% 
-    select(province_state, country_region, total, updated) 
+    select(province_state, country_region, total, updated)
+
+# total de casos confirmados
+confirmed_updated <- china_ncov_confirmed %>% 
+    select(updated) %>% 
+    summarise(sum(updated)) %>%
+    pull() %>% 
+    format(nsmall = 0, big.mark = ",") 
+```
+
+```{r}
+# direccion de los datos 
+deaths_data <-  "COVID-19-master/time_series/time_series_2019-ncov-Deaths.csv"
+
+# lee csv con los casos confirmados
+ncov_deaths <- read_csv(deaths_data)
+
+# total de fallecidos confirmados
+deaths_updated <- ncov_deaths %>%
+    clean_names() %>%
+    filter(country_region == "Mainland China") %>% 
+    select(tail(names(.), 1)) %>% 
+    setNames("updated") %>% 
+    summarise(sum(updated)) %>% 
+    pull() %>% 
+    format(nsmall = 0, big.mark = ",") 
 ```
 
 ```{r}
 # https://gadm.org/download_country_v3.html
 shp_file <- paste0(getwd(), "/gadm36_CHN_shp/gadm36_CHN_1.shp")
 
+# lee shp
 map <- readOGR(shp_file)
 
+# transforma los shp
 map <- spTransform(map, CRS = CRS("+init=epsg:4326"))
 
+# dataframe con los datos
 map_data <- data.frame(id = rownames(map@data), map@data)
 
+# tibble necesario para graficar 
 map_df <- fortify(map) %>%
     merge(map_data, by="id") %>%
     select(long, lat, group, NAME_1) %>%
     rename(province_state = NAME_1) %>%
     left_join(china_ncov_confirmed, by = "province_state") %>% 
     mutate(contagion = case_when(
-               is.na(updated) | updated > 1 & updated <= 9 ~ "0-9",
-               updated > 10 & updated <= 99 ~ "10-99",
+               is.na(updated)  ~ "Sin contagio",
+               updated > 1 & updated <= 99 ~ "10-99",
                updated > 100 & updated <= 999 ~ "100-999",
                updated > 1000 & updated <= 9999 ~ "1,000-9,999",
                updated >= 10000 ~ "10,000 o más"
            ),
            contagion = factor(contagion, 
-                       levels = c("0-9", 
+                       levels = c("Sin contagio",
                                   "10-99", 
                                   "100-999", 
                                   "1,000-9,999", 
@@ -87,23 +122,66 @@ map_df <- fortify(map) %>%
 ```
 
 ```{r, fig.width = 14, fig.height = 8.5}
-legend_title <- "Cantidad de infectados por el Novel Coronavirus (COVID-19) en China"
+# mes actual
+month_name <- month(today(), label = TRUE, abbr = FALSE) %>% stringr::str_to_title() 
 
-mapa_ncov <- ggplot(data = map_df, 
-                    aes(x = long, y = lat, group = group, fill = contagion)) +
-    geom_polygon()  +
-    geom_path(color = "grey70", size = 0.1) +
-    geom_richtext(aes(x = 75, y = 15, 
-                      label = "As of 8<sup>th</sup> of January 2020,<br>the bushfires have burnt<br>41,300 mi<sup>2</sup>"), 
-                  family = "Oswald",
-                  size = 3.7,
-                  color = "black") +
+# dia actual
+day_today <- day(today())
+
+# agno actual
+year_today <- year(today())
+
+# titulo de la leyenda 
+legend_title <- paste0("Casos confirmados por el Novel Coronavirus (COVID-19) en China, ", 
+                       day_today, " ", month_name, " del ", year_today)
+
+# construccion mapa
+mapa_ncov <- ggplot() +
+    geom_polygon(
+        data = map_df, 
+        aes(x = long, y = lat, group = group, fill = contagion)
+    )  +
+    geom_path(
+        data = map_df, 
+        aes(x = long, y = lat, group = group, fill = contagion),
+        color = "grey70", size = 0.1
+    ) +
+    geom_richtext(
+        aes(x = 80,
+            y = 22,
+            label = paste0("Confirmado <span style='color:#9d1e1e'>",
+                           confirmed_updated,
+                           "</span> casos &<br><span style='color:#9d1e1e'>",
+                           deaths_updated,
+                           "</span> muertes en China")),
+        family = "Oswald",
+        color = "grey20",
+        size = 7,
+        fontface = "bold",
+        label.color = NA
+    ) + 
+    geom_richtext(
+        aes(x = 132,
+            y = 35,
+            label = paste0("Outbreak originado en<br>",
+                           "<span style='color:#870101'>Wuhan</span>,", 
+                           " provincia de Hubei")),
+        family = "Oswald",
+        color = "grey20",
+        size = 4,
+        fontface = "bold",
+        label.color = NA
+    ) +
     coord_map("bonne", lat0 = 50) +
-    scale_x_continuous(expand = c(0.02, 0.02), limits = c(70, 135)) +
-    scale_y_continuous(expand = c(0.02, 0.02), limits = c(17, 57)) +
-    scale_fill_manual(values = c("#f5f5f5", "#efe3dc", "#e7bb9d", "#d2726a", "#ba0101"),
+    scale_x_continuous(expand = c(0.02, 0.02), 
+                       limits = c(70, 135)) +
+    scale_y_continuous(expand = c(0.02, 0.02), 
+                       limits = c(17, 57)) +
+    scale_fill_manual(values = c("#f5f5f5", "#efe3dc", "#e7bb9d", 
+                                 "#d2726a", "#ba0101"),
                       name = legend_title) +
-    scale_color_manual(values = c("#dcdcdc", "#dfc7b9", "#dd9f74", "#c64d43", "#870101"),
+    scale_color_manual(values = c("#dcdcdc", "#dfc7b9", "#dd9f74", 
+                                  "#c64d43", "#870101"),
                        name = legend_title) +
     guides(fill = guide_legend(title.position = "top", 
                                title.hjust = 0.5, 
@@ -127,10 +205,26 @@ mapa_ncov <- ggplot(data = map_df,
                                       face = "bold",
                                       color = "grey20",
                                       size = 12),
-          plot.margin = margin(0, 0, 0, 0)) 
+          plot.margin = margin(0, 0, 0, 0)) +
+    geom_segment(
+        aes(x = 127, y = 35, xend = 112, yend = 31),
+        arrow = arrow(length = unit(0.03, "npc")),
+        lineend = "round",
+        color = "white",
+        size = 0.1
+    ) +
+    geom_segment(
+        aes(x = 127, y = 35, xend = 112, yend = 31),
+        arrow = arrow(length = unit(0.03, "npc")),
+        lineend = "round",
+        color = "black",
+        size = 0.50
+    )
+```
 
+```{r, fig.width = 14, fig.height = 8.5}
+# guarda mapa
 ggsave(here::here("plots", "2020_01", "2020_01_china_ncov.pdf"),
        plot = mapa_ncov, width = 14, height = 8.5, device = cairo_pdf)
 ```
-
 
