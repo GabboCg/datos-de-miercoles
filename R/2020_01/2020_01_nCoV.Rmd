@@ -40,8 +40,7 @@ ncov_confirmed <- read_csv(direc_data)
 province_name <-  ncov_confirmed %>%
     clean_names() %>%
     select(province_state, country_region, lat, long) %>% 
-    filter(country_region == "Mainland China",
-           province_state != "Hubei")
+    filter(country_region == "Mainland China")
 
 updated <- ncov_confirmed[, ncol(ncov_confirmed)] %>% 
     clean_names() %>% 
@@ -52,8 +51,7 @@ china_ncov_confirmed <- ncov_confirmed %>%
     select(province_state, country_region) %>% 
     cbind(updated) %>% 
     as_tibble() %>% 
-    filter(country_region == "Mainland China",
-           province_state != "Hubei")  %>% 
+    filter(country_region == "Mainland China")  %>% 
     mutate(total = sum(updated)) %>% 
     select(province_state, country_region, total, updated) 
 ```
@@ -74,19 +72,18 @@ map_df <- fortify(map) %>%
     rename(province_state = NAME_1) %>%
     left_join(china_ncov_confirmed, by = "province_state") %>% 
     mutate(contagion = case_when(
-               is.na(updated) ~ "[0-250)", 
-               updated < 250 ~ "[0-250)",
-               updated >= 250 & updated < 500 ~ "[250-500)",
-               updated >= 500 & updated < 750 ~ "[500-750)",
-               updated >= 750 & updated < 1000 ~ "[750-1000)",
-               updated >= 1000 ~ "(\u2265 1000)"
+               is.na(updated) | updated > 1 & updated <= 9 ~ "0-9",
+               updated > 10 & updated <= 99 ~ "10-99",
+               updated > 100 & updated <= 999 ~ "100-999",
+               updated > 1000 & updated <= 9999 ~ "1,000-9,999",
+               updated >= 10000 ~ "10,000 o más"
            ),
            contagion = factor(contagion, 
-                       levels = c("[0-250)", 
-                                  "[250-500)", 
-                                  "[500-750)", 
-                                  "[750-1000)", 
-                                  "(\u2265 1000)")))
+                       levels = c("0-9", 
+                                  "10-99", 
+                                  "100-999", 
+                                  "1,000-9,999", 
+                                  "10,000 o más")))
 ```
 
 ```{r, fig.width = 14, fig.height = 8.5}
@@ -96,7 +93,12 @@ mapa_ncov <- ggplot(data = map_df,
                     aes(x = long, y = lat, group = group, fill = contagion)) +
     geom_polygon()  +
     geom_path(color = "grey70", size = 0.1) +
-    coord_map("bonne", lat0 = 50) + 
+    geom_richtext(aes(x = 75, y = 15, 
+                      label = "As of 8<sup>th</sup> of January 2020,<br>the bushfires have burnt<br>41,300 mi<sup>2</sup>"), 
+                  family = "Oswald",
+                  size = 3.7,
+                  color = "black") +
+    coord_map("bonne", lat0 = 50) +
     scale_x_continuous(expand = c(0.02, 0.02), limits = c(70, 135)) +
     scale_y_continuous(expand = c(0.02, 0.02), limits = c(17, 57)) +
     scale_fill_manual(values = c("#f5f5f5", "#efe3dc", "#e7bb9d", "#d2726a", "#ba0101"),
@@ -115,17 +117,17 @@ mapa_ncov <- ggplot(data = map_df,
                                       face = "bold",
                                       hjust = 0.5,
                                       margin = margin(t = -10 , b = 10)),
-        legend.position = c(0.5, 0.925),
-        legend.key.height = unit(0.5, "lines"),
-        legend.key.width = unit(8.0, "lines"),
-        legend.text = element_text(family = "Oswald",
-                                   color = "grey40",
-                                   size = 10),
-        legend.title = element_text(family = "Oswald",
-                                    face = "bold",
-                                    color = "grey20",
-                                    size = 12),
-        plot.margin = margin(0, 0, 0, 0))
+          legend.position = c(0.5, 0.925),
+          legend.key.height = unit(0.5, "lines"),
+          legend.key.width = unit(8.0, "lines"),
+          legend.text = element_text(family = "Oswald",
+                                     color = "grey40",
+                                     size = 10),
+          legend.title = element_text(family = "Oswald",
+                                      face = "bold",
+                                      color = "grey20",
+                                      size = 12),
+          plot.margin = margin(0, 0, 0, 0)) 
 
 ggsave(here::here("plots", "2020_01", "2020_01_china_ncov.pdf"),
        plot = mapa_ncov, width = 14, height = 8.5, device = cairo_pdf)
