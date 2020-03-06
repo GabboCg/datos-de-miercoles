@@ -1,0 +1,249 @@
+---
+title: "Casos Nuevo Coronavirus"
+subtitle: "Datos de Miércoles"
+author: "Gabriel E. Cabrera"
+date: "*Week* 2"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library("tidyverse")
+library("viridis")
+```
+
+```{r}
+imdb <- read_csv("https://raw.githubusercontent.com/cienciadedatos/datos-de-miercoles/master/datos/2020/2020-02-19/ranking_imdb.csv")
+```
+
+```{r}
+tableau_palette <- ggthemes::ggthemes_data[["tableau"]][["color-palettes"]][["regular"]]$`Classic 10`$value
+
+imdb_direction <- imdb %>% 
+    group_by(direccion) %>% 
+    mutate(total_earnings = sum(ganancias, na.rm = TRUE)) %>% 
+    select(direccion, total_earnings) %>% 
+    distinct() %>% 
+    arrange(total_earnings) %>% 
+    filter(total_earnings != 0) %>% 
+    ungroup() %>% 
+    mutate(direccion = factor(direccion, direccion)) %>% 
+    tail(10)
+```
+
+```{r, dev='cairo_pdf', fig.width = 14, fig.height = 8.5}
+imdb_direction_plot <- ggplot(imdb_direction) +
+    geom_segment(aes(x = direccion, xend = direccion, 
+                     y = 0, yend = total_earnings, size = 2),
+                 color = tableau_palette) +
+    geom_point(aes(x = direccion, y = total_earnings, 
+                   size = 3), color = tableau_palette) + 
+    geom_text(aes(x = direccion, y = total_earnings + 350, 
+                  label = paste0("$ ",round(total_earnings, 0), " mill USD")), 
+              color = tableau_palette) + 
+    coord_flip() + 
+    labs(x = "", 
+         y = "Total Ganacias ($)", 
+         title = "Top 10", 
+         subtitle = "Ganancias acumulada por director",
+         caption = "Fuente: Kaggle") + 
+    hrbrthemes::theme_ipsum() +
+    theme(
+        axis.line = element_line(size = 0.75, colour = "black"),
+        axis.text.x = element_text(face="bold", color="black", size=10),
+        axis.text.y = element_text(face="bold", color="black", size=10),
+        axis.ticks.length = unit(.5, "cm"),
+        legend.position="none",
+        panel.background = element_rect(fill = "#E8E8E8", color = "#E8E8E8"),
+        plot.background = element_rect(fill = "#E8E8E8")
+    ) 
+```
+
+```{r, fig.width = 14, fig.height = 8.5}
+# guarda mapa
+ggsave(here::here("plots", "2020_02", "2020_02_imdb_direction.pdf"),
+       plot = imdb_direction_plot, width = 14, height = 8.5, device = cairo_pdf)
+```
+
+```{r}
+imdb_ptjs <- imdb %>% 
+    separate_rows(genero) %>% 
+    filter(anio >= 1950, 
+           genero %in% c("Comedia", "Drama", 
+                         "Acción", "Aventura", 
+                         "Ciencia", "Deportes")) %>% 
+    mutate(decade = case_when(
+        anio >= 1950 & anio < 1961 ~ "50's",
+        anio >= 1960 & anio < 1971 ~ "60's",
+        anio >= 1970 & anio < 1981 ~ "70's",
+        anio >= 1980 & anio < 1991 ~ "80's",
+        anio >= 1990 & anio < 2001 ~ "90's",
+        anio >= 2000 & anio < 2011 ~ "2000's",
+        anio >= 2010 & anio < 2021 ~ "2010's"),
+    decade = factor(decade, levels = c("50's", "60's", "70's", 
+                                       "80's", "90's", "2000's", "2010's"))) %>% 
+    group_by(decade) %>% 
+    mutate(aux = n()) %>% 
+    ungroup() %>% 
+    group_by(genero, decade) %>% 
+    mutate(min_ptj = min(puntaje), max_ptj = max(puntaje)) %>% 
+    select(decade, genero, min_ptj, max_ptj) %>% 
+    arrange(decade, genero) %>% 
+    distinct() %>% 
+    gather("observation", "value", -c("decade", "genero")) %>% 
+    arrange(decade, genero) %>% 
+    group_by(decade) %>% 
+    group_modify(~ rbind(.x, tibble(genero = rep(NA, 2),
+                                    observation = rep(NA, 2),
+                                    value = rep(NA, 2)))) %>%
+    bind_cols(tibble(id = rep(seq(1, 98/ 2, 1), 2)) %>% arrange(id))
+```
+
+```{r}
+# Get the name and the y position of each label
+label_data <- imdb_ptjs %>% 
+    group_by(id, genero) %>% 
+    summarise(tot = sum(value)) %>% 
+    mutate(number_of_bar = nrow(.),
+           angle = 90 - 360 * (id - 0.5) / number_of_bar,
+           hjust = if_else(angle < -90, 1, 0),
+           angle = if_else(angle < -90, angle + 180, angle))
+    
+base_data <- imdb_ptjs %>% 
+  group_by(decade) %>% 
+  summarize(start = min(id), end = max(id) - 1) %>% 
+  rowwise() %>% 
+  mutate(title = mean(c(start, end)))
+
+grid_data <- base_data 
+grid_data$end <- grid_data$end[c( nrow(grid_data), 1:nrow(grid_data)-1)] + 1
+grid_data$start <- grid_data$start - 1
+grid_data <- grid_data[-1,]
+```
+
+```{r, fig.width = 14, fig.height = 8.5}
+imdb_ptjs_plot <- ggplot(imdb_ptjs) +
+    geom_bar(aes(x = as.factor(id), y = value, fill = observation),
+             stat = "identity",
+             alpha = 0.5) +
+    scale_fill_viridis(discrete = TRUE) +
+    ylim(-5, 17) +
+    coord_polar() + 
+    theme_minimal() +
+    theme(
+        legend.position = "none",
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        panel.grid = element_blank(),
+        plot.margin = unit(rep(-1,4), "cm") 
+    ) +
+    geom_text(
+        data = label_data,
+        aes(x = id, y = tot + 1, label = genero, hjust = hjust),
+        color = "black",
+        fontface = "bold",
+        alpha = 0.6,
+        size = 3,
+        angle = label_data$angle,
+        inherit.aes = FALSE
+    ) +
+    geom_segment(
+        data = base_data,
+        aes(x = start, y = -0, xend = end, yend = -0),
+        colour = "black",
+        alpha = 0.8,
+        size = 0.5,
+        inherit.aes = FALSE
+    ) +
+    geom_text(
+        data = base_data,
+        aes(x = title, y = -1.5, label = decade),
+        colour = "black",
+        alpha = 0.8,
+        size = 3,
+        fontface = "bold",
+        inherit.aes = FALSE
+    )
+```
+
+```{r, fig.width = 14, fig.height = 8.5}
+# guarda mapa
+ggsave(here::here("plots", "2020_02", "2020_02_imdb_puntaje.pdf"),
+       plot = imdb_ptjs_plot, width = 14, height = 8.5, device = cairo_pdf)
+```
+
+```{r, dev='cairo_pdf', fig.width = 14, fig.height = 8.5}
+library("gganimate")
+
+# install.packages('gifski')
+# install.packages('png')
+
+imdb_time <- imdb %>% 
+  filter(direccion == "Quentin Tarantino") %>% 
+  arrange(anio) %>% 
+  select(titulo, duracion, anio) %>%
+  mutate(titulo = factor(titulo, titulo),
+    image = case_when(
+    titulo == "Reservoir Dogs" ~ here::here("R", "2020_02", "image", "reservoir-circle.png"),
+    titulo == "Pulp Fiction" ~ here::here("R", "2020_02", "image", "pulp-circle.png"),
+    titulo == "Jackie Brown" ~ here::here("R", "2020_02", "image", "jackie-circle.png"),
+    titulo == "Kill Bill: Vol. 1" ~ here::here("R", "2020_02", "image", "kill-01-circle.png"),
+    titulo == "Kill Bill: Vol. 2" ~ here::here("R", "2020_02", "image", "kill-02-circle.png"),
+    titulo == "Death Proof" ~ here::here("R", "2020_02", "image", "death-circle.png"),
+    titulo == "Inglourious Basterds" ~ here::here("R", "2020_02", "image", "inglourious-circle.png"),
+    titulo == "Django Unchained" ~ here::here("R", "2020_02", "image", "django-circle.png"),
+    titulo == "The Hateful Eight" ~ here::here("R", "2020_02", "image", "hateful-circle.png"),
+  )) %>% 
+  bind_cols(tibble(palette = tableau_palette[-1])) %>% 
+  group_by(titulo, image, anio, palette) %>% 
+  group_modify(~ rbind(.x, tibble(duracion = seq(1, .x$duracion, 1)))) %>% 
+  slice(-1) 
+
+p <- ggplot(imdb_time) + 
+  geom_segment(aes(x = titulo, xend = titulo, y = 0, yend = 250, 
+                   group = titulo), 
+               linetype = 2, colour = 'grey') +
+  geom_segment(aes(x = titulo, xend = titulo, y = 0, yend = duracion, 
+                   group = titulo), 
+               linetype = 2, size = 2, color = imdb_time$palette) + 
+  ggimage::geom_image(aes(x = titulo, y = duracion, image = image, 
+                          group = titulo), 
+                      size = .06 , by = 'width') + 
+  hrbrthemes::theme_ipsum() +
+  coord_flip() +
+  labs(x = "", 
+       y = "Minutos", 
+       title = "¿Qué película de Quentin Tarantino tiene mayor duración?", 
+       subtitle = "1992 - 2015",
+       caption = "Fuente: Kaggle") + 
+  hrbrthemes::theme_ipsum() +
+  theme(
+    axis.line = element_line(size = 0.75, colour = "black"),
+    axis.text.x = element_text(face = "bold", color = "black", size = 16),
+    axis.title.x = element_text(size = 12),
+    axis.text.y = element_text(face = "bold", color = "black", size = 16),
+    axis.ticks.length = unit(.5, "cm"),
+    plot.title = element_text(size = 20),
+    plot.subtitle = element_text(size = 18),
+    plot.caption = element_text(size = 12),
+    legend.position = "none",
+    panel.background = element_rect(fill = "#E8E8E8", color = "#E8E8E8"),
+    plot.background = element_rect(fill = "#E8E8E8")
+  ) +
+  transition_reveal(duracion) 
+
+# print(p)
+
+animate(p, 
+        nframes = 100, 
+        width = 1600, height = 950, 
+        fps = 10, 
+        start_pause = 5, end_pause = 10,
+        renderer = gifski_renderer(here::here("plots", "2020_02", 
+                                              "tarantino.gif")))
+
+anim_save(here::here("plots/2020_02/tarantino.gif"))
+```

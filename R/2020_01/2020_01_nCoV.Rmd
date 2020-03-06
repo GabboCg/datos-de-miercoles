@@ -35,7 +35,7 @@ unlink("COVID-19-master.zip", recursive = TRUE)
 
 ```{r}
 # direccion de los datos 
-confirmed_data <- "COVID-19-master/time_series/time_series_2019-ncov-Confirmed.csv"
+confirmed_data <- "COVID-19-master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Confirmed.csv"
 
 # lee csv con los casos confirmados
 ncov_confirmed <- read_csv(confirmed_data)
@@ -71,7 +71,7 @@ confirmed_updated <- china_ncov_confirmed %>%
 
 ```{r}
 # direccion de los datos 
-deaths_data <-  "COVID-19-master/time_series/time_series_2019-ncov-Deaths.csv"
+deaths_data <-  "COVID-19-master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Deaths.csv"
 
 # lee csv con los casos confirmados
 ncov_deaths <- read_csv(deaths_data)
@@ -132,7 +132,7 @@ day_today <- day(today())
 year_today <- year(today())
 
 # titulo de la leyenda 
-legend_title <- paste0("Casos confirmados por el Novel Coronavirus (COVID-19) en China, ", 
+legend_title <- paste0("Casos infectados por Coronavirus (COVID-19) en China, ", 
                        day_today, " ", month_name, " del ", year_today)
 
 # construccion mapa
@@ -147,7 +147,7 @@ mapa_ncov <- ggplot() +
         color = "grey70", size = 0.1
     ) +
     geom_richtext(
-        aes(x = 80,
+        aes(x = 82,
             y = 22,
             label = paste0("Confirmado <span style='color:#9d1e1e'>",
                            confirmed_updated,
